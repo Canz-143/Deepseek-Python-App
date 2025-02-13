@@ -5,8 +5,10 @@ import threading
 import PyPDF2
 from pathlib import Path
 import chardet
+import json
+from datetime import datetime
+import os
 
-# Optional imports with error handling
 try:
     from docx import Document
     DOCX_SUPPORT = True
@@ -18,39 +20,68 @@ class MinimalistOllamaUI:
         self.root = root
         self.root.title("Ollama Chat")
         self.root.geometry("700x600")
-        self.root.configure(bg='#ffffff')
         
-        # Control flags
+        # Theme and control flags
+        self.is_dark_mode = False
         self.stop_generation = False
         self.is_generating = False
         self.file_content = ""
+        self.chat_history = []
+        
+        # Color schemes
+        self.colors = {
+            'light': {
+                'bg': '#ffffff',
+                'fg': '#000000',
+                'input_bg': '#f8f8f8',
+                'button_bg': '#e0e0e0'
+            },
+            'dark': {
+                'bg': '#2d2d2d',
+                'fg': '#ffffff',
+                'input_bg': '#3d3d3d',
+                'button_bg': '#404040'
+            }
+        }
         
         # Configure styles
-        style = ttk.Style()
-        style.configure('TFrame', background='#ffffff')
-        style.configure('TButton',
-                       padding=10,
-                       font=('Helvetica', 10))
-        style.configure('Danger.TButton',
-                       padding=10,
-                       font=('Helvetica', 10),
-                       background='#ff0000')
-        style.configure('TLabel',
-                       background='#ffffff',
-                       font=('Helvetica', 10))
+        self.style = ttk.Style()
+        self.update_styles()
         
         # Main container
         self.main_container = ttk.Frame(root, padding="20 20 20 20")
         self.main_container.pack(fill='both', expand=True)
         
+        # Top control frame
+        self.control_frame = ttk.Frame(self.main_container)
+        self.control_frame.pack(fill='x', pady=(0, 15))
+        
         # Model selection
         self.model_var = tk.StringVar(value="deepseek-r1:7b")
         model_entry = ttk.Entry(
-            self.main_container,
+            self.control_frame,
             textvariable=self.model_var,
             font=('Helvetica', 11)
         )
-        model_entry.pack(fill='x', pady=(0, 15))
+        model_entry.pack(side='left', fill='x', expand=True)
+        
+        # Dark mode toggle
+        self.dark_mode_btn = ttk.Button(
+            self.control_frame,
+            text="🌙 Dark",
+            command=self.toggle_dark_mode,
+            width=10
+        )
+        self.dark_mode_btn.pack(side='right', padx=(10, 0))
+        
+        # Save chat button
+        self.save_chat_btn = ttk.Button(
+            self.control_frame,
+            text="💾 Save Chat",
+            command=self.save_chat_history,
+            width=12
+        )
+        self.save_chat_btn.pack(side='right', padx=(10, 0))
         
         # File upload section
         self.file_frame = ttk.Frame(self.main_container)
@@ -65,8 +96,7 @@ class MinimalistOllamaUI:
         
         self.file_label = ttk.Label(
             self.file_frame,
-            text="No file selected",
-            background='#ffffff'
+            text="No file selected"
         )
         self.file_label.pack(side='left', fill='x', expand=True)
         
@@ -77,12 +107,11 @@ class MinimalistOllamaUI:
             font=('Helvetica', 11),
             wrap='word',
             borderwidth=1,
-            relief="solid",
-            bg='#f8f8f8'
+            relief="solid"
         )
         self.prompt_input.pack(fill='x', pady=(0, 10))
         
-        # Button frame for submit and stop buttons
+        # Button frame
         self.button_frame = ttk.Frame(self.main_container)
         self.button_frame.pack(pady=(0, 15))
         
@@ -108,8 +137,7 @@ class MinimalistOllamaUI:
             font=('Helvetica', 11),
             wrap='word',
             borderwidth=1,
-            relief="solid",
-            bg='#f8f8f8'
+            relief="solid"
         )
         self.response_output.pack(fill='both', expand=True)
         
@@ -117,6 +145,142 @@ class MinimalistOllamaUI:
         self.prompt_input.insert('1.0', 'Enter your prompt here...')
         self.prompt_input.bind('<FocusIn>', self.clear_placeholder)
         self.prompt_input.bind('<FocusOut>', self.restore_placeholder)
+        
+        # Initial theme application
+        self.apply_theme()
+
+    def update_styles(self):
+        theme = 'dark' if self.is_dark_mode else 'light'
+        colors = self.colors[theme]
+        
+        self.style.configure('TFrame', background=colors['bg'])
+        self.style.configure('TButton', padding=10, font=('Helvetica', 10))
+        self.style.configure('Danger.TButton', padding=10, font=('Helvetica', 10))
+        self.style.configure('TLabel', background=colors['bg'], foreground=colors['fg'])
+
+    def apply_theme(self):
+        theme = 'dark' if self.is_dark_mode else 'light'
+        colors = self.colors[theme]
+        
+        # Update root and main container
+        self.root.configure(bg=colors['bg'])
+        self.main_container.configure(style='TFrame')
+        
+        # Update text widgets
+        for widget in [self.prompt_input, self.response_output]:
+            widget.configure(
+                bg=colors['input_bg'],
+                fg=colors['fg'],
+                insertbackground=colors['fg']
+            )
+        
+        # Update dark mode button text
+        self.dark_mode_btn.configure(text="☀️ Light" if self.is_dark_mode else "🌙 Dark")
+        
+        # Update all frames
+        for frame in [self.control_frame, self.file_frame, self.button_frame]:
+            frame.configure(style='TFrame')
+        
+        # Update labels
+        self.file_label.configure(style='TLabel')
+
+    def toggle_dark_mode(self):
+        self.is_dark_mode = not self.is_dark_mode
+        self.update_styles()
+        self.apply_theme()
+
+    def save_chat_history(self):
+        if not self.chat_history and not self.response_output.get('1.0', tk.END).strip():
+            return
+        
+        # Create a timestamp for the filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"chat_history_{timestamp}.json"
+        
+        # Ask user for save location
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            initialfile=default_filename,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            # Get current conversation if not in history
+            current_prompt = self.prompt_input.get('1.0', tk.END).strip()
+            current_response = self.response_output.get('1.0', tk.END).strip()
+            
+            if current_prompt and current_response:
+                self.chat_history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "prompt": current_prompt,
+                    "response": current_response
+                })
+            
+            # Save to file
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        "model": self.model_var.get(),
+                        "history": self.chat_history
+                    }, f, indent=2, ensure_ascii=False)
+                
+                # Show success in file label temporarily
+                original_text = self.file_label.cget("text")
+                self.file_label.configure(text="Chat history saved successfully!")
+                self.root.after(3000, lambda: self.file_label.configure(text=original_text))
+            except Exception as e:
+                self.file_label.configure(text=f"Error saving chat history: {str(e)}")
+
+    def submit_prompt(self):
+        prompt = self.prompt_input.get('1.0', tk.END).strip()
+        if prompt == 'Enter your prompt here...':
+            return
+            
+        self.response_output.delete('1.0', tk.END)
+        self.submit_button.pack_forget()
+        self.stop_button.pack(side='left', padx=(0, 5))
+        self.stop_generation = False
+        self.is_generating = True
+        
+        thread = threading.Thread(target=self.generate_response)
+        thread.start()
+
+    def generate_response(self):
+        try:
+            prompt = self.prompt_input.get('1.0', tk.END).strip()
+            if prompt == 'Enter your prompt here...':
+                prompt = ''
+            
+            if self.file_content:
+                if not prompt.endswith(':'):
+                    prompt += ':'
+                prompt += f"\n\n{self.file_content}"
+            
+            model = self.model_var.get()
+            full_response = ""
+            
+            for chunk in ollama.generate(model, prompt, stream=True):
+                if self.stop_generation:
+                    self.root.after(0, self.update_response, "\n\n[Generation stopped by user]")
+                    break
+                response_chunk = chunk["response"]
+                full_response += response_chunk
+                self.root.after(0, self.update_response, response_chunk)
+            
+            # Add to chat history
+            if not self.stop_generation:
+                self.chat_history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "prompt": prompt,
+                    "response": full_response
+                })
+            
+        except Exception as e:
+            self.root.after(0, self.update_response, f"\nError: {str(e)}")
+        finally:
+            self.is_generating = False
+            self.stop_generation = False
+            self.root.after(0, self.reset_buttons)
 
     def extract_text_from_pdf(self, file_path):
         text = ""
@@ -189,41 +353,6 @@ class MinimalistOllamaUI:
     def stop_generation_request(self):
         self.stop_generation = True
         self.stop_button.configure(state='disabled', text="Stopping...")
-
-    def submit_prompt(self):
-        self.response_output.delete('1.0', tk.END)
-        self.submit_button.pack_forget()  # Hide submit button
-        self.stop_button.pack(side='left', padx=(0, 5))  # Show stop button
-        self.stop_generation = False
-        self.is_generating = True
-        
-        thread = threading.Thread(target=self.generate_response)
-        thread.start()
-
-    def generate_response(self):
-        try:
-            prompt = self.prompt_input.get('1.0', tk.END).strip()
-            if prompt == 'Enter your prompt here...':
-                prompt = ''
-            
-            if self.file_content:
-                if not prompt.endswith(':'):
-                    prompt += ':'
-                prompt += f"\n\n{self.file_content}"
-            
-            model = self.model_var.get()
-            
-            for chunk in ollama.generate(model, prompt, stream=True):
-                if self.stop_generation:
-                    self.root.after(0, self.update_response, "\n\n[Generation stopped by user gwapo]")
-                    break
-                self.root.after(0, self.update_response, chunk["response"])
-        except Exception as e:
-            self.root.after(0, self.update_response, f"\nError: {str(e)}")
-        finally:
-            self.is_generating = False
-            self.stop_generation = False
-            self.root.after(0, self.reset_buttons)
 
     def reset_buttons(self):
         self.stop_button.pack_forget()  # Hide stop button
