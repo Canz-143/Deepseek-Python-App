@@ -215,7 +215,7 @@ class MinimalistOllamaUI:
             
             for chunk in ollama.generate(model, prompt, stream=True):
                 if self.stop_generation:
-                    self.root.after(0, self.update_response, "\n\n[Generation stopped by user]")
+                    self.root.after(0, self.update_response, "\n\n[Generation stopped by user gwapo]")
                     break
                 self.root.after(0, self.update_response, chunk["response"])
         except Exception as e:
