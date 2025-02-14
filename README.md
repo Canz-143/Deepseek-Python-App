@@ -1,7 +1,7 @@
-# Minimalist Deepseek UI
+# Simple Deepseek UI
 
 ## Description
-Minimalist Deepseek UI is a simple and intuitive chatbot interface built using Tkinter and powered by Ollama and Deepseek. It allows users to input prompts, generate responses, save chat history, and even analyze text files (TXT, PDF, DOCX) with the help of Deepseek's LLM.
+Simple Deepseek UI is an intuitive chatbot interface built using Tkinter and powered by Ollama and Deepseek. It allows users to input prompts, generate responses, save chat history, and even analyze text files (TXT, PDF, DOCX) with the help of Deepseek's LLM.
 
 ## Features
 - **Chat Interface**: Seamless interaction with Ollama AI
