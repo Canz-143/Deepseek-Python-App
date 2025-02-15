@@ -1,0 +1,8 @@
+{
+  "model": "deepseek-r1:7b",
+  "theme": "light",
+  "window_size": "700x600",
+  "font_size": 11,
+  "auto_save": true,
+  "history_limit": 100
+}

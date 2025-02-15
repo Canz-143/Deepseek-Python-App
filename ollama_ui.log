@@ -1,0 +1,24 @@
+2025-02-16 00:30:13,415 - WARNING - Failed to load settings: [Errno 2] No such file or directory: 'settings.json'
+2025-02-16 00:30:13,436 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:30:13,437 - ERROR - Failed to get models: 'name'
+2025-02-16 00:42:55,272 - WARNING - Failed to load settings: [Errno 2] No such file or directory: 'settings.json'
+2025-02-16 00:42:55,292 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:42:55,293 - ERROR - Failed to get models: 'name'
+2025-02-16 00:43:31,350 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:43:55,579 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:44:20,508 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:49:45,719 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:49:45,720 - ERROR - Failed to get models: 'name'
+2025-02-16 00:53:05,032 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:53:05,068 - ERROR - Failed to get models: 'name'
+2025-02-16 00:53:31,673 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:54:59,285 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:54:59,285 - ERROR - Failed to get models: 'name'
+2025-02-16 00:55:33,364 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 00:55:33,365 - ERROR - Failed to get models: 'name'
+2025-02-16 00:55:44,537 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:56:01,021 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:56:06,619 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:56:27,812 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:56:41,602 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 00:57:29,937 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"

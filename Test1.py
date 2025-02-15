@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 import ollama
 import threading
 import PyPDF2
@@ -8,364 +8,379 @@ import chardet
 import json
 from datetime import datetime
 import os
+import logging
+from typing import Optional, Dict, Any
+import markdown
+from ttkwidgets.tooltips import Tooltip
 
-try:
-    from docx import Document
-    DOCX_SUPPORT = True
-except ImportError:
-    DOCX_SUPPORT = False
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename='ollama_ui.log'
+)
 
-class MinimalistOllamaUI:
+class Config:
+    def __init__(self):
+        self.default_settings = {
+            'model': 'deepseek-r1:7b',
+            'theme': 'light',
+            'window_size': '700x600',
+            'font_size': 11,
+            'auto_save': True,
+            'history_limit': 100
+        }
+        self.settings_file = 'settings.json'
+        self.current_settings = self.load()
+
+    def load(self) -> Dict[str, Any]:
+        try:
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+                return {**self.default_settings, **settings}
+        except Exception as e:
+            logging.warning(f"Failed to load settings: {e}")
+            return self.default_settings.copy()
+
+    def save(self) -> None:
+        try:
+            with open(self.settings_file, 'w') as f:
+                json.dump(self.current_settings, f, indent=2)
+        except Exception as e:
+            logging.error(f"Failed to save settings: {e}")
+
+    def get(self, key: str) -> Any:
+        return self.current_settings.get(key, self.default_settings.get(key))
+
+    def set(self, key: str, value: Any) -> None:
+        self.current_settings[key] = value
+        self.save()
+
+class StatusBar(ttk.Frame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.label = ttk.Label(self, text="Ready")
+        self.label.pack(side='left', padx=5)
+
+    def update_status(self, text: str) -> None:
+        self.label.configure(text=text)
+
+class EnhancedOllamaUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Ollama Chat")
-        self.root.geometry("700x600")
-        
-        # Theme and control flags
-        self.is_dark_mode = False
-        self.stop_generation = False
-        self.is_generating = False
-        self.file_content = ""
-        self.chat_history = []
-        
-        # Color schemes
-        self.colors = {
-            'light': {
-                'bg': '#ffffff',
-                'fg': '#000000',
-                'input_bg': '#f8f8f8',
-                'button_bg': '#e0e0e0'
-            },
-            'dark': {
-                'bg': '#2d2d2d',
-                'fg': '#ffffff',
-                'input_bg': '#3d3d3d',
-                'button_bg': '#404040'
-            }
-        }
-        
-        # Configure styles
-        self.style = ttk.Style()
-        self.update_styles()
+        self.config = Config()
+        self.setup_ui()
+        self.bind_shortcuts()
+        self.setup_autosave()
+
+    def setup_ui(self):
+        # Window setup
+        self.root.title("Enhanced Ollama Chat")
+        self.root.geometry(self.config.get('window_size'))
         
         # Main container
-        self.main_container = ttk.Frame(root, padding="20 20 20 20")
+        self.main_container = ttk.Frame(self.root, padding="10")
         self.main_container.pack(fill='both', expand=True)
+
+        # Menu bar
+        self.create_menu()
+
+        # Model selection with autocomplete
+        self.create_model_selection()
+
+        # Chat tabs
+        self.notebook = ttk.Notebook(self.main_container)
+        self.notebook.pack(fill='both', expand=True, pady=5)
+        self.create_new_chat_tab()
+
+        # Status bar
+        self.status_bar = StatusBar(self.root)
+        self.status_bar.pack(fill='x', side='bottom')
+
+    def create_menu(self):
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="New Chat", command=self.create_new_chat_tab)
+        file_menu.add_command(label="Save Chat", command=self.save_chat_history)
+        file_menu.add_command(label="Export as PDF", command=self.export_as_pdf)
+        file_menu.add_separator()
+        file_menu.add_command(label="Settings", command=self.show_settings)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+
+        # Edit menu
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Clear History", command=self.clear_history)
+        edit_menu.add_command(label="Copy Response", command=self.copy_response)
+
+        # View menu
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_checkbutton(label="Dark Mode", command=self.toggle_theme)
+
+    def create_model_selection(self):
+        model_frame = ttk.Frame(self.main_container)
+        model_frame.pack(fill='x', pady=5)
+
+        ttk.Label(model_frame, text="Model:").pack(side='left', padx=5)
         
-        # Top control frame
-        self.control_frame = ttk.Frame(self.main_container)
-        self.control_frame.pack(fill='x', pady=(0, 15))
-        
-        # Model selection
-        self.model_var = tk.StringVar(value="deepseek-r1:7b")
-        model_entry = ttk.Entry(
-            self.control_frame,
+        self.model_var = tk.StringVar(value=self.config.get('model'))
+        model_entry = ttk.Combobox(
+            model_frame,
             textvariable=self.model_var,
-            font=('Helvetica', 11)
+            values=self.get_available_models()
         )
-        model_entry.pack(side='left', fill='x', expand=True)
+        model_entry.pack(side='left', fill='x', expand=True, padx=5)
+
+    def create_new_chat_tab(self):
+        chat_frame = ttk.Frame(self.notebook)
+        self.notebook.add(chat_frame, text=f"Chat {self.notebook.index('end')+1}")
         
-        # Dark mode toggle
-        self.dark_mode_btn = ttk.Button(
-            self.control_frame,
-            text="🌙 Dark",
-            command=self.toggle_dark_mode,
-            width=10
+        # Chat history
+        history_frame = ttk.Frame(chat_frame)
+        history_frame.pack(fill='both', expand=True, pady=5)
+
+        self.chat_text = tk.Text(
+            history_frame,
+            wrap='word',
+            font=('Helvetica', self.config.get('font_size')),
+            height=15
         )
-        self.dark_mode_btn.pack(side='right', padx=(10, 0))
+        self.chat_text.pack(fill='both', expand=True)
         
-        # Save chat button
-        self.save_chat_btn = ttk.Button(
-            self.control_frame,
-            text="💾 Save Chat",
-            command=self.save_chat_history,
-            width=12
+        # Input area
+        input_frame = ttk.Frame(chat_frame)
+        input_frame.pack(fill='x', pady=5)
+
+        self.input_text = tk.Text(
+            input_frame,
+            wrap='word',
+            font=('Helvetica', self.config.get('font_size')),
+            height=4
         )
-        self.save_chat_btn.pack(side='right', padx=(10, 0))
-        
-        # File upload section
-        self.file_frame = ttk.Frame(self.main_container)
-        self.file_frame.pack(fill='x', pady=(0, 15))
-        
-        self.file_button = ttk.Button(
-            self.file_frame,
+        self.input_text.pack(fill='x', pady=5)
+
+        # Buttons
+        button_frame = ttk.Frame(input_frame)
+        button_frame.pack(fill='x')
+
+        ttk.Button(
+            button_frame,
+            text="Send",
+            command=self.send_message
+        ).pack(side='left', padx=5)
+
+        ttk.Button(
+            button_frame,
             text="Upload File",
             command=self.upload_file
-        )
-        self.file_button.pack(side='left', padx=(0, 10))
-        
-        self.file_label = ttk.Label(
-            self.file_frame,
-            text="No file selected"
-        )
-        self.file_label.pack(side='left', fill='x', expand=True)
-        
-        # Prompt input area
-        self.prompt_input = tk.Text(
-            self.main_container,
-            height=4,
-            font=('Helvetica', 11),
-            wrap='word',
-            borderwidth=1,
-            relief="solid"
-        )
-        self.prompt_input.pack(fill='x', pady=(0, 10))
-        
-        # Button frame
-        self.button_frame = ttk.Frame(self.main_container)
-        self.button_frame.pack(pady=(0, 15))
-        
-        # Submit button
-        self.submit_button = ttk.Button(
-            self.button_frame,
-            text="Generate",
-            command=self.submit_prompt
-        )
-        self.submit_button.pack(side='left', padx=(0, 5))
-        
-        # Stop button (hidden initially)
-        self.stop_button = ttk.Button(
-            self.button_frame,
-            text="Stop",
-            command=self.stop_generation_request,
-            style='Danger.TButton'
-        )
-        
-        # Response area
-        self.response_output = tk.Text(
-            self.main_container,
-            font=('Helvetica', 11),
-            wrap='word',
-            borderwidth=1,
-            relief="solid"
-        )
-        self.response_output.pack(fill='both', expand=True)
-        
-        # Add placeholder text
-        self.prompt_input.insert('1.0', 'Enter your prompt here...')
-        self.prompt_input.bind('<FocusIn>', self.clear_placeholder)
-        self.prompt_input.bind('<FocusOut>', self.restore_placeholder)
-        
-        # Initial theme application
-        self.apply_theme()
+        ).pack(side='left', padx=5)
 
-    def update_styles(self):
-        theme = 'dark' if self.is_dark_mode else 'light'
-        colors = self.colors[theme]
-        
-        self.style.configure('TFrame', background=colors['bg'])
-        self.style.configure('TButton', padding=10, font=('Helvetica', 10))
-        self.style.configure('Danger.TButton', padding=10, font=('Helvetica', 10))
-        self.style.configure('TLabel', background=colors['bg'], foreground=colors['fg'])
+        ttk.Button(
+            button_frame,
+            text="Clear",
+            command=lambda: self.input_text.delete('1.0', tk.END)
+        ).pack(side='left', padx=5)
 
-    def apply_theme(self):
-        theme = 'dark' if self.is_dark_mode else 'light'
-        colors = self.colors[theme]
-        
-        # Update root and main container
-        self.root.configure(bg=colors['bg'])
-        self.main_container.configure(style='TFrame')
-        
-        # Update text widgets
-        for widget in [self.prompt_input, self.response_output]:
-            widget.configure(
-                bg=colors['input_bg'],
-                fg=colors['fg'],
-                insertbackground=colors['fg']
-            )
-        
-        # Update dark mode button text
-        self.dark_mode_btn.configure(text="☀️ Light" if self.is_dark_mode else "🌙 Dark")
-        
-        # Update all frames
-        for frame in [self.control_frame, self.file_frame, self.button_frame]:
-            frame.configure(style='TFrame')
-        
-        # Update labels
-        self.file_label.configure(style='TLabel')
-
-    def toggle_dark_mode(self):
-        self.is_dark_mode = not self.is_dark_mode
-        self.update_styles()
-        self.apply_theme()
-
-    def save_chat_history(self):
-        if not self.chat_history and not self.response_output.get('1.0', tk.END).strip():
+    def send_message(self):
+        message = self.input_text.get('1.0', tk.END).strip()
+        if not message:
             return
-        
-        # Create a timestamp for the filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_filename = f"chat_history_{timestamp}.json"
-        
-        # Ask user for save location
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            initialfile=default_filename,
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if file_path:
-            # Get current conversation if not in history
-            current_prompt = self.prompt_input.get('1.0', tk.END).strip()
-            current_response = self.response_output.get('1.0', tk.END).strip()
-            
-            if current_prompt and current_response:
-                self.chat_history.append({
-                    "timestamp": datetime.now().isoformat(),
-                    "prompt": current_prompt,
-                    "response": current_response
-                })
-            
-            # Save to file
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        "model": self.model_var.get(),
-                        "history": self.chat_history
-                    }, f, indent=2, ensure_ascii=False)
-                
-                # Show success in file label temporarily
-                original_text = self.file_label.cget("text")
-                self.file_label.configure(text="Chat history saved successfully!")
-                self.root.after(3000, lambda: self.file_label.configure(text=original_text))
-            except Exception as e:
-                self.file_label.configure(text=f"Error saving chat history: {str(e)}")
 
-    def submit_prompt(self):
-        prompt = self.prompt_input.get('1.0', tk.END).strip()
-        if prompt == 'Enter your prompt here...':
-            return
-            
-        self.response_output.delete('1.0', tk.END)
-        self.submit_button.pack_forget()
-        self.stop_button.pack(side='left', padx=(0, 5))
-        self.stop_generation = False
-        self.is_generating = True
+        self.chat_text.insert(tk.END, f"\nYou: {message}\n")
+        self.input_text.delete('1.0', tk.END)
         
-        thread = threading.Thread(target=self.generate_response)
-        thread.start()
+        # Start response in a thread
+        threading.Thread(target=self.get_ollama_response, args=(message,)).start()
 
-    def generate_response(self):
+    def get_ollama_response(self, message: str):
         try:
-            prompt = self.prompt_input.get('1.0', tk.END).strip()
-            if prompt == 'Enter your prompt here...':
-                prompt = ''
+            self.status_bar.update_status("Generating response...")
+            response = ""
             
-            if self.file_content:
-                if not prompt.endswith(':'):
-                    prompt += ':'
-                prompt += f"\n\n{self.file_content}"
-            
-            model = self.model_var.get()
-            full_response = ""
-            
-            for chunk in ollama.generate(model, prompt, stream=True):
-                if self.stop_generation:
-                    self.root.after(0, self.update_response, "\n\n[Generation stopped by user]")
-                    break
-                response_chunk = chunk["response"]
-                full_response += response_chunk
-                self.root.after(0, self.update_response, response_chunk)
-            
-            # Add to chat history
-            if not self.stop_generation:
-                self.chat_history.append({
-                    "timestamp": datetime.now().isoformat(),
-                    "prompt": prompt,
-                    "response": full_response
-                })
-            
-        except Exception as e:
-            self.root.after(0, self.update_response, f"\nError: {str(e)}")
-        finally:
-            self.is_generating = False
-            self.stop_generation = False
-            self.root.after(0, self.reset_buttons)
+            for chunk in ollama.generate(
+                self.model_var.get(),
+                message,
+                stream=True
+            ):
+                response += chunk['response']
+                self.root.after(0, self.update_chat, response)
 
-    def extract_text_from_pdf(self, file_path):
+            self.root.after(0, self.status_bar.update_status, "Ready")
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            self.root.after(0, self.show_error, error_msg)
+            logging.error(error_msg)
+
+    def update_chat(self, response: str):
+        # Remove "<think>" tags before inserting the response
+        cleaned_response = response.replace("<think>", "").replace("</think>", "").strip()
+
+        # Delete the previous bot message if needed
+        self.chat_text.delete('end-2c linestart', tk.END)
+
+        # Insert the cleaned response
+        self.chat_text.insert(tk.END, f"\nAssistant: {cleaned_response}\n")
+        self.chat_text.see(tk.END)
+
+    def upload_file(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[
+                ("Text files", "*.txt"),
+                ("PDF files", "*.pdf"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return
+
+        try:
+            content = self.read_file(file_path)
+            self.input_text.delete('1.0', tk.END)
+            self.input_text.insert('1.0', f"Analyze this content:\n\n{content[:500]}...")
+            self.status_bar.update_status(f"Loaded: {Path(file_path).name}")
+        except Exception as e:
+            self.show_error(f"Error loading file: {str(e)}")
+
+    def read_file(self, file_path: str) -> str:
+        ext = Path(file_path).suffix.lower()
+        
+        if ext == '.pdf':
+            return self.read_pdf(file_path)
+        else:
+            return self.read_text(file_path)
+
+    def read_pdf(self, file_path: str) -> str:
         text = ""
         with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
+            pdf = PyPDF2.PdfReader(file)
+            for page in pdf.pages:
                 text += page.extract_text() + "\n"
         return text
 
-    def extract_text_from_docx(self, file_path):
-        if not DOCX_SUPPORT:
-            raise ImportError("python-docx package is not installed. Please install it using: pip install python-docx")
-        doc = Document(file_path)
-        return "\n".join([paragraph.text for paragraph in doc.paragraphs])
-
-    def extract_text_from_txt(self, file_path):
+    def read_text(self, file_path: str) -> str:
         with open(file_path, 'rb') as file:
-            raw_data = file.read()
-            result = chardet.detect(raw_data)
-            encoding = result['encoding']
-
+            raw = file.read()
+            encoding = chardet.detect(raw)['encoding']
+            
         with open(file_path, 'r', encoding=encoding) as file:
             return file.read()
 
-    def upload_file(self):
-        filetypes = [
-            ("Text files", "*.txt"),
-            ("PDF files", "*.pdf"),
-        ]
-        
-        if DOCX_SUPPORT:
-            filetypes.insert(1, ("Word files", "*.docx"))
-        
-        filetypes.append(("All files", "*.*"))
-        
-        file_path = filedialog.askopenfilename(filetypes=filetypes)
-        
-        if file_path:
-            try:
-                file_extension = Path(file_path).suffix.lower()
+    def show_error(self, message: str):
+        messagebox.showerror("Error", message)
+        self.status_bar.update_status("Error occurred")
+
+    def show_settings(self):
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("Settings")
+        settings_window.geometry("400x300")
+
+        ttk.Label(settings_window, text="Font Size:").pack(pady=5)
+        font_size = ttk.Scale(
+            settings_window,
+            from_=8,
+            to=20,
+            value=self.config.get('font_size'),
+            command=lambda v: self.update_font_size(int(float(v)))
+        )
+        font_size.pack()
+
+        ttk.Checkbutton(
+            settings_window,
+            text="Auto-save",
+            variable=tk.BooleanVar(value=self.config.get('auto_save')),
+            command=lambda: self.config.set('auto_save', not self.config.get('auto_save'))
+        ).pack(pady=5)
+
+    def update_font_size(self, size: int):
+        self.config.set('font_size', size)
+        self.chat_text.configure(font=('Helvetica', size))
+        self.input_text.configure(font=('Helvetica', size))
+
+    def toggle_theme(self):
+        current_theme = self.config.get('theme')
+        new_theme = 'dark' if current_theme == 'light' else 'light'
+        self.config.set('theme', new_theme)
+        self.apply_theme()
+
+    def apply_theme(self):
+        style = ttk.Style()
+        if self.config.get('theme') == 'dark':
+            # Apply dark theme colors
+            style.configure('TFrame', background='#2d2d2d')
+            style.configure('TLabel', background='#2d2d2d', foreground='white')
+            self.chat_text.configure(bg='#3d3d3d', fg='white')
+            self.input_text.configure(bg='#3d3d3d', fg='white')
+        else:
+            # Apply light theme colors
+            style.configure('TFrame', background='white')
+            style.configure('TLabel', background='white', foreground='black')
+            self.chat_text.configure(bg='white', fg='black')
+            self.input_text.configure(bg='white', fg='black')
+
+    def bind_shortcuts(self):
+        self.root.bind('<Control-Return>', lambda e: self.send_message())
+        self.root.bind('<Control-n>', lambda e: self.create_new_chat_tab())
+        self.root.bind('<Control-s>', lambda e: self.save_chat_history())
+
+    def setup_autosave(self):
+        if self.config.get('auto_save'):
+            self.root.after(300000, self.auto_save)  # Save every 5 minutes
+
+    def auto_save(self):
+        if self.config.get('auto_save'):
+            self.save_chat_history()
+            self.root.after(300000, self.auto_save)
+
+    def save_chat_history(self):
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"chat_history_{timestamp}.json"
+            
+            history = {
+                'model': self.model_var.get(),
+                'content': self.chat_text.get('1.0', tk.END)
+            }
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(history, f, indent=2)
                 
-                if file_extension == '.pdf':
-                    self.file_content = self.extract_text_from_pdf(file_path)
-                elif file_extension == '.docx' and DOCX_SUPPORT:
-                    self.file_content = self.extract_text_from_docx(file_path)
-                else:
-                    self.file_content = self.extract_text_from_txt(file_path)
-                
-                filename = Path(file_path).name
-                self.file_label.configure(text=f"Loaded: {filename}")
-                
-                self.prompt_input.delete('1.0', tk.END)
-                preview = self.file_content[:200] + "..." if len(self.file_content) > 200 else self.file_content
-                self.prompt_input.insert('1.0', f"Analyze this text:\n\n{preview}")
-                
-            except Exception as e:
-                self.file_label.configure(text=f"Error loading file: {str(e)}")
-                self.file_content = ""
+            self.status_bar.update_status(f"Chat saved to {filename}")
+        except Exception as e:
+            self.show_error(f"Error saving chat: {str(e)}")
 
-    def clear_placeholder(self, event):
-        if self.prompt_input.get('1.0', 'end-1c') == 'Enter your prompt here...':
-            self.prompt_input.delete('1.0', tk.END)
-            self.prompt_input.configure(fg='black')
+    def export_as_pdf(self):
+        # Implement PDF export functionality
+        pass
 
-    def restore_placeholder(self, event):
-        if not self.prompt_input.get('1.0', 'end-1c'):
-            self.prompt_input.insert('1.0', 'Enter your prompt here...')
-            self.prompt_input.configure(fg='gray')
+    def clear_history(self):
+        if messagebox.askyesno("Clear History", "Are you sure you want to clear the chat history?"):
+            self.chat_text.delete('1.0', tk.END)
 
-    def stop_generation_request(self):
-        self.stop_generation = True
-        self.stop_button.configure(state='disabled', text="Stopping...")
+    def copy_response(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.chat_text.get('1.0', tk.END))
 
-    def reset_buttons(self):
-        self.stop_button.pack_forget()  # Hide stop button
-        self.submit_button.configure(state='normal')
-        self.submit_button.pack(side='left', padx=(0, 5))  # Show submit button
-
-    def update_response(self, text):
-        self.response_output.insert(tk.END, text)
-        self.response_output.see(tk.END)
+    def get_available_models(self) -> list:
+        try:
+            models = ollama.list()
+            available_models = [model['name'] for model in models.get('models', [])]
+            if "deepseek-r1:1.5b" not in available_models:
+                available_models.append("deepseek-r1:1.5b")
+            return available_models
+        except Exception as e:
+            logging.error(f"Failed to get models: {e}")
+            return [self.config.get('model'), "deepseek-r1:1.5b"]
 
 def main():
     root = tk.Tk()
-    app = MinimalistOllamaUI(root)
+    app = EnhancedOllamaUI(root)
     root.mainloop()
 
 if __name__ == "__main__":
