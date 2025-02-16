@@ -340,18 +340,24 @@ class EnhancedOllamaUI:
 
     def save_chat_history(self):
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"chat_history_{timestamp}.json"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                title="Save Chat History"
+            )
+            
+            if not file_path:
+                return
             
             history = {
                 'model': self.model_var.get(),
                 'content': self.chat_text.get('1.0', tk.END)
             }
             
-            with open(filename, 'w', encoding='utf-8') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(history, f, indent=2)
                 
-            self.status_bar.update_status(f"Chat saved to {filename}")
+            self.status_bar.update_status(f"Chat saved to {file_path}")
         except Exception as e:
             self.show_error(f"Error saving chat: {str(e)}")
 

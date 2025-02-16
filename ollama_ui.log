@@ -22,3 +22,14 @@
 2025-02-16 00:56:27,812 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
 2025-02-16 00:56:41,602 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
 2025-02-16 00:57:29,937 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:48:21,307 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 12:48:21,308 - ERROR - Failed to get models: 'name'
+2025-02-16 12:48:39,682 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:49:14,379 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:50:01,237 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:50:47,263 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:51:49,022 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:55:16,785 - INFO - HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2025-02-16 12:55:16,785 - ERROR - Failed to get models: 'name'
+2025-02-16 12:55:38,483 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2025-02-16 12:55:45,635 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
