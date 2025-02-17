@@ -55,9 +55,6 @@ class LLMInterface(QMainWindow):
         self.model_selector = QComboBox()
         self.model_selector.addItems([
             "deepseek-r1:7b",
-            "llama2:7b",
-            "mistral:7b",
-            "neural-chat:7b",
             "codellama:7b",
             "deepseek-r1:1.5b"
         ])
